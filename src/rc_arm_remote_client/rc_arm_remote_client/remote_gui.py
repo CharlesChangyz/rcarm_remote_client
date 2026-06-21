@@ -646,8 +646,6 @@ class RemoteControlWindow(QMainWindow):
             ("Request Stop MuJoCo", "stop_mujoco", "danger"),
             ("Request Start Real", "start_real", "safe"),
             ("Request Stop Real", "stop_real", "danger"),
-            ("Request Start Middleware", "start_middleware", "safe"),
-            ("Request Stop Middleware", "stop_middleware", "danger"),
         ]:
             button = QPushButton(text)
             set_button_role(button, role)
