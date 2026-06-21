@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QPlainTextEdit,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QVBoxLayout,
@@ -55,6 +56,114 @@ REMOTE_LOG_TOPIC = "/rc_arm_2/remote/log"
 REMOTE_PROCESS_STATUS_TOPIC = "/rc_arm_2/remote/process_status"
 REMOTE_REACHABILITY_REQUEST_TOPIC = "/rc_arm_2/remote/reachability_request"
 REMOTE_REACHABILITY_RESULT_TOPIC = "/rc_arm_2/remote/reachability_result"
+NEON_CONSOLE_STYLESHEET = """
+QMainWindow {
+    background: #030712;
+}
+QScrollArea {
+    background: #030712;
+    border: none;
+}
+QWidget#contentRoot {
+    background: #030712;
+}
+QGroupBox {
+    color: #72f8ff;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(7, 18, 34, 245),
+        stop:1 rgba(3, 10, 20, 250));
+    border: 1px solid rgba(0, 234, 255, 95);
+    border-radius: 4px;
+    margin-top: 18px;
+    padding: 12px;
+    font: 800 14px "Cascadia Code", "Liberation Mono", monospace;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 8px;
+    color: #72f8ff;
+    background: #030712;
+}
+QLabel {
+    color: #eafcff;
+    font-size: 15px;
+}
+QFormLayout QLabel {
+    color: #9ab8c6;
+}
+QDoubleSpinBox, QSpinBox {
+    color: #f2fdff;
+    background: #020812;
+    border: 1px solid rgba(0, 234, 255, 110);
+    border-radius: 3px;
+    min-height: 34px;
+    padding: 4px 8px;
+    font: 800 17px "Cascadia Code", "Liberation Mono", monospace;
+}
+QDoubleSpinBox:focus, QSpinBox:focus {
+    border: 1px solid #ff2bf3;
+}
+QCheckBox {
+    color: #9ab8c6;
+    font-size: 15px;
+    spacing: 8px;
+}
+QPushButton {
+    min-height: 38px;
+    color: #f2fdff;
+    background: rgba(0, 234, 255, 22);
+    border: 1px solid rgba(0, 234, 255, 110);
+    border-radius: 3px;
+    padding: 7px 10px;
+    font: 800 13px "Segoe UI", Arial, sans-serif;
+    text-transform: uppercase;
+}
+QPushButton:hover {
+    border: 1px solid #00eaff;
+    background: rgba(0, 234, 255, 42);
+}
+QPushButton:disabled {
+    color: #536978;
+    border-color: rgba(83, 105, 120, 80);
+    background: rgba(83, 105, 120, 25);
+}
+QPushButton[role="primary"] {
+    border: 1px solid #00eaff;
+    background: rgba(0, 234, 255, 58);
+}
+QPushButton[role="safe"] {
+    color: #deffe9;
+    border: 1px solid #39ff88;
+    background: rgba(57, 255, 136, 34);
+}
+QPushButton[role="danger"] {
+    color: #ffe1e8;
+    border: 1px solid #ff2f5f;
+    background: rgba(255, 47, 95, 36);
+}
+QPushButton[role="warn"] {
+    color: #fff0b6;
+    border: 1px solid #ffd23f;
+    background: rgba(255, 210, 63, 34);
+}
+QPushButton[role="magenta"] {
+    border: 1px solid #ff2bf3;
+    background: rgba(255, 43, 243, 34);
+}
+QPlainTextEdit#logView {
+    color: #c8fbff;
+    background: #02060c;
+    border: 1px solid rgba(0, 234, 255, 115);
+    border-radius: 3px;
+    padding: 10px;
+    font: 15px "Cascadia Code", "Liberation Mono", monospace;
+}
+"""
+
+
+def set_button_role(button: QPushButton, role: str) -> None:
+    button.setProperty("role", role)
 
 
 def normalize_frame_id(frame_id: str) -> str:
@@ -416,7 +525,9 @@ class RemoteControlWindow(QMainWindow):
         self._shutdown_started = False
 
         self.setWindowTitle("RC Arm Remote Control")
-        self.resize(1060, 720)
+        self.setMinimumSize(1280, 760)
+        self.resize(1500, 900)
+        self.setStyleSheet(NEON_CONSOLE_STYLESHEET)
 
         self._backend = RemoteRosBackend(args)
         self._backend.actual_pose_updated.connect(self._on_actual_pose)
@@ -443,17 +554,27 @@ class RemoteControlWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         central = QWidget()
+        central.setObjectName("contentRoot")
         root = QVBoxLayout(central)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(12)
         top = QHBoxLayout()
         bottom = QHBoxLayout()
+        top.setSpacing(12)
+        bottom.setSpacing(12)
         root.addLayout(top, stretch=3)
         root.addLayout(bottom, stretch=2)
-        self.setCentralWidget(central)
 
-        top.addWidget(self._build_target_editor(), stretch=3)
-        top.addWidget(self._build_system_panel(), stretch=2)
-        bottom.addWidget(self._build_status_panel(), stretch=2)
-        bottom.addWidget(self._build_log_panel(), stretch=3)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(central)
+        self.setCentralWidget(scroll)
+
+        top.addWidget(self._build_target_editor(), stretch=5)
+        top.addWidget(self._build_system_panel(), stretch=3)
+        bottom.addWidget(self._build_status_panel(), stretch=4)
+        bottom.addWidget(self._build_log_panel(), stretch=6)
 
     def _build_target_editor(self) -> QWidget:
         box = QGroupBox("Target Editor")
@@ -494,10 +615,12 @@ class RemoteControlWindow(QMainWindow):
         self._j5_target_spin.setSingleStep(0.001)
         self._j5_target_spin.setSuffix(" m")
         send_btn = QPushButton("Send")
+        set_button_role(send_btn, "primary")
         send_btn.clicked.connect(self._send_target)
         reset_btn = QPushButton("Reset XYZ to current")
         reset_btn.clicked.connect(self._reset_xyz_to_current)
         send_j5_btn = QPushButton("Send J5")
+        set_button_role(send_j5_btn, "magenta")
         send_j5_btn.clicked.connect(self._send_j5)
         use_j5_btn = QPushButton("Use actual")
         use_j5_btn.clicked.connect(self._use_actual_j5)
@@ -518,15 +641,16 @@ class RemoteControlWindow(QMainWindow):
     def _build_system_panel(self) -> QWidget:
         box = QGroupBox("System Control")
         layout = QVBoxLayout(box)
-        for text, action in [
-            ("Start MuJoCo", "start_mujoco"),
-            ("Stop MuJoCo", "stop_mujoco"),
-            ("Start Real", "start_real"),
-            ("Stop Real", "stop_real"),
-            ("Start Middleware", "start_middleware"),
-            ("Stop Middleware", "stop_middleware"),
+        for text, action, role in [
+            ("Request Start MuJoCo", "start_mujoco", "safe"),
+            ("Request Stop MuJoCo", "stop_mujoco", "danger"),
+            ("Request Start Real", "start_real", "safe"),
+            ("Request Stop Real", "stop_real", "danger"),
+            ("Request Start Middleware", "start_middleware", "safe"),
+            ("Request Stop Middleware", "stop_middleware", "danger"),
         ]:
             button = QPushButton(text)
+            set_button_role(button, role)
             button.clicked.connect(lambda _=False, a=action: self._backend.queue_service_action(a))
             layout.addWidget(button)
 
@@ -534,6 +658,8 @@ class RemoteControlWindow(QMainWindow):
         vacuum_off = QPushButton("Vacuum OFF")
         payload_on = QPushButton("Payload ON")
         payload_off = QPushButton("Payload OFF")
+        set_button_role(vacuum_on, "warn")
+        set_button_role(payload_on, "warn")
         vacuum_on.clicked.connect(lambda: self._backend.queue_vacuum(True))
         vacuum_off.clicked.connect(lambda: self._backend.queue_vacuum(False))
         payload_on.clicked.connect(lambda: self._backend.queue_payload(True))
@@ -545,6 +671,7 @@ class RemoteControlWindow(QMainWindow):
         self._action_set_spin.setRange(1, 999)
         self._action_set_spin.setValue(1)
         run_action = QPushButton("Run Action Set")
+        set_button_role(run_action, "primary")
         run_action.clicked.connect(lambda: self._backend.queue_action_set(self._action_set_spin.value()))
         action_row = QHBoxLayout()
         action_row.addWidget(QLabel("Action set id"))
@@ -579,7 +706,9 @@ class RemoteControlWindow(QMainWindow):
         box = QGroupBox("Log")
         layout = QVBoxLayout(box)
         self._log_view = QPlainTextEdit()
+        self._log_view.setObjectName("logView")
         self._log_view.setReadOnly(True)
+        self._log_view.setMinimumHeight(320)
         self._log_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self._log_view)
         return box
