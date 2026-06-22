@@ -123,33 +123,92 @@ QPushButton:hover {
     border: 1px solid #00eaff;
     background: rgba(0, 234, 255, 42);
 }
+QPushButton:focus {
+    border: 1px solid #ffffff;
+    background: rgba(255, 255, 255, 22);
+}
+QPushButton:pressed {
+    color: #020812;
+    border: 1px solid #ffffff;
+    background: #72f8ff;
+}
 QPushButton:disabled {
-    color: #536978;
-    border-color: rgba(83, 105, 120, 80);
-    background: rgba(83, 105, 120, 25);
+    color: #40505d;
+    border-color: rgba(64, 80, 93, 105);
+    background: #060b14;
 }
 QPushButton[role="primary"] {
     border: 1px solid #00eaff;
     background: rgba(0, 234, 255, 58);
+}
+QPushButton[role="primary"]:pressed {
+    color: #020812;
+    border: 1px solid #b8fbff;
+    background: #00eaff;
+}
+QPushButton[role="primary"]:disabled {
+    color: #36525c;
+    border: 1px solid rgba(0, 234, 255, 42);
+    background: rgba(0, 234, 255, 10);
 }
 QPushButton[role="safe"] {
     color: #deffe9;
     border: 1px solid #39ff88;
     background: rgba(57, 255, 136, 34);
 }
+QPushButton[role="safe"]:pressed {
+    color: #021109;
+    border: 1px solid #bbffd4;
+    background: #39ff88;
+}
+QPushButton[role="safe"]:disabled {
+    color: #365045;
+    border: 1px solid rgba(57, 255, 136, 38);
+    background: rgba(57, 255, 136, 9);
+}
 QPushButton[role="danger"] {
     color: #ffe1e8;
     border: 1px solid #ff2f5f;
     background: rgba(255, 47, 95, 36);
+}
+QPushButton[role="danger"]:pressed {
+    color: #19020a;
+    border: 1px solid #ffc0cf;
+    background: #ff2f5f;
+}
+QPushButton[role="danger"]:disabled {
+    color: #5c3942;
+    border: 1px solid rgba(255, 47, 95, 38);
+    background: rgba(255, 47, 95, 9);
 }
 QPushButton[role="warn"] {
     color: #fff0b6;
     border: 1px solid #ffd23f;
     background: rgba(255, 210, 63, 34);
 }
+QPushButton[role="warn"]:pressed {
+    color: #171004;
+    border: 1px solid #fff0b6;
+    background: #ffd23f;
+}
+QPushButton[role="warn"]:disabled {
+    color: #5c5135;
+    border: 1px solid rgba(255, 210, 63, 40);
+    background: rgba(255, 210, 63, 9);
+}
 QPushButton[role="magenta"] {
     border: 1px solid #ff2bf3;
     background: rgba(255, 43, 243, 34);
+}
+QPushButton[role="magenta"]:pressed {
+    color: #170216;
+    border: 1px solid #ffc2fb;
+    background: #ff2bf3;
+}
+QPushButton[role="magenta"]:disabled {
+    color: #5c3959;
+    border: 1px solid rgba(255, 43, 243, 38);
+    background: rgba(255, 43, 243, 9);
 }
 QPlainTextEdit#logView {
     color: #c8fbff;
