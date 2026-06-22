@@ -16,7 +16,7 @@ from typing import Dict, Optional, Tuple
 
 import rclpy
 from geometry_msgs.msg import TransformStamped
-from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QSettings, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -108,6 +108,23 @@ QCheckBox {
     color: #9ab8c6;
     font-size: 15px;
     spacing: 8px;
+}
+QCheckBox#languageToggle {
+    color: #72f8ff;
+    font: 800 12px "Cascadia Code", "Liberation Mono", monospace;
+    spacing: 6px;
+    padding: 0 4px;
+}
+QCheckBox#languageToggle::indicator {
+    width: 34px;
+    height: 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 234, 255, 135);
+    background: rgba(0, 234, 255, 18);
+}
+QCheckBox#languageToggle::indicator:checked {
+    border: 1px solid #ff2bf3;
+    background: rgba(255, 43, 243, 120);
 }
 QPushButton {
     min-height: 38px;
@@ -223,6 +240,41 @@ QPlainTextEdit#logView {
 
 def set_button_role(button: QPushButton, role: str) -> None:
     button.setProperty("role", role)
+
+
+UI_TEXT = {
+    "target_editor": {"en": "Target Editor", "zh": "目标编辑"},
+    "system_control": {"en": "System Control", "zh": "系统控制"},
+    "status": {"en": "Status", "zh": "状态"},
+    "log": {"en": "Log", "zh": "日志"},
+    "j4_world": {"en": "j4 world (deg)", "zh": "j4 世界角 (deg)"},
+    "xyz_step": {"en": "xyz step", "zh": "XYZ 步长"},
+    "j4_step": {"en": "j4 step", "zh": "J4 步长"},
+    "j5_target": {"en": "J5 target (m)", "zh": "J5 目标 (m)"},
+    "send_j5": {"en": "Send J5", "zh": "发送 J5"},
+    "use_actual": {"en": "Use actual", "zh": "使用实际值"},
+    "send_if_changed": {"en": "Send if changed only", "zh": "仅变化时发送"},
+    "send": {"en": "Send", "zh": "发送"},
+    "reset_xyz": {"en": "Reset XYZ to current", "zh": "XYZ 重置到当前"},
+    "request_start_mujoco": {"en": "Request Start MuJoCo", "zh": "请求启动 MuJoCo"},
+    "request_stop_mujoco": {"en": "Request Stop MuJoCo", "zh": "请求停止 MuJoCo"},
+    "request_start_real": {"en": "Request Start Real", "zh": "请求启动实机"},
+    "request_stop_real": {"en": "Request Stop Real", "zh": "请求停止实机"},
+    "vacuum_on": {"en": "Vacuum ON", "zh": "吸盘开"},
+    "vacuum_off": {"en": "Vacuum OFF", "zh": "吸盘关"},
+    "payload_on": {"en": "Payload ON", "zh": "负载开"},
+    "payload_off": {"en": "Payload OFF", "zh": "负载关"},
+    "action_set_id": {"en": "Action set id", "zh": "动作集 ID"},
+    "run_action_set": {"en": "Run Action Set", "zh": "执行动作集"},
+    "actual_pose": {"en": "Actual current pose", "zh": "当前实际位姿"},
+    "editing_target": {"en": "Editing target", "zh": "编辑目标"},
+    "last_sent": {"en": "Last sent target", "zh": "上次发送目标"},
+    "last_send_result": {"en": "Last send result", "zh": "上次发送结果"},
+    "reachability": {"en": "Reachability", "zh": "可达性"},
+    "process_status": {"en": "Process status", "zh": "进程状态"},
+    "payload_active": {"en": "Payload active", "zh": "负载状态"},
+    "j5_actual": {"en": "J5 actual (m)", "zh": "J5 实际值 (m)"},
+}
 
 
 def normalize_frame_id(frame_id: str) -> str:
@@ -582,6 +634,12 @@ class RemoteControlWindow(QMainWindow):
         self._latest_j5_position: Optional[float] = None
         self._syncing_editor = False
         self._shutdown_started = False
+        self._settings = QSettings("RCArm", "RemoteControlGui")
+        self._language = str(self._settings.value("language", "en"))
+        if self._language not in ("en", "zh"):
+            self._language = "en"
+        self._translatable_widgets = []
+        self._language_toggle: Optional[QCheckBox] = None
 
         self.setWindowTitle("RC Arm Remote Control")
         self.setMinimumSize(1280, 760)
@@ -606,10 +664,49 @@ class RemoteControlWindow(QMainWindow):
         self._reachability_timer.timeout.connect(self._request_reachability)
 
         self._build_ui()
+        self._apply_language()
         self._install_shortcuts()
         self._sync_editing_widgets()
         self._backend.start()
         self._request_reachability()
+
+    def _text(self, key: str) -> str:
+        return UI_TEXT[key][self._language]
+
+    def _register_text(self, widget, key: str):
+        self._translatable_widgets.append((widget, key))
+        self._apply_widget_text(widget, key)
+        return widget
+
+    def _apply_widget_text(self, widget, key: str) -> None:
+        text = self._text(key)
+        if isinstance(widget, QGroupBox):
+            widget.setTitle(text)
+        else:
+            widget.setText(text)
+
+    def _build_language_toggle(self) -> QCheckBox:
+        toggle = QCheckBox()
+        toggle.setObjectName("languageToggle")
+        toggle.setToolTip("Switch language / 切换语言")
+        toggle.toggled.connect(self._set_language)
+        self._language_toggle = toggle
+        return toggle
+
+    def _apply_language(self) -> None:
+        for widget, key in self._translatable_widgets:
+            self._apply_widget_text(widget, key)
+        if self._language_toggle is not None:
+            self._language_toggle.blockSignals(True)
+            self._language_toggle.setChecked(self._language == "zh")
+            self._language_toggle.setText("中" if self._language == "zh" else "EN")
+            self._language_toggle.blockSignals(False)
+        self._settings.setValue("language", self._language)
+
+    @Slot(bool)
+    def _set_language(self, checked: bool) -> None:
+        self._language = "zh" if checked else "en"
+        self._apply_language()
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -623,6 +720,10 @@ class RemoteControlWindow(QMainWindow):
         bottom.setSpacing(12)
         root.addLayout(top, stretch=3)
         root.addLayout(bottom, stretch=2)
+        footer = QHBoxLayout()
+        footer.addWidget(self._build_language_toggle(), stretch=0)
+        footer.addStretch(1)
+        root.addLayout(footer, stretch=0)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -636,7 +737,7 @@ class RemoteControlWindow(QMainWindow):
         bottom.addWidget(self._build_log_panel(), stretch=6)
 
     def _build_target_editor(self) -> QWidget:
-        box = QGroupBox("Target Editor")
+        box = self._register_text(QGroupBox(), "target_editor")
         layout = QGridLayout(box)
         self._xyz_step_spin = QDoubleSpinBox()
         self._xyz_step_spin.setDecimals(3)
@@ -660,35 +761,36 @@ class RemoteControlWindow(QMainWindow):
             plus = QPushButton("+")
             minus.clicked.connect(lambda _=False, axis=field_key: self._step_axis(axis, -1.0))
             plus.clicked.connect(lambda _=False, axis=field_key: self._step_axis(axis, 1.0))
-            layout.addWidget(QLabel("{} ({})".format(display_name, unit)), row, 0)
+            label = self._register_text(QLabel(), "j4_world") if field_key == "j4" else QLabel("{} ({})".format(display_name, unit))
+            layout.addWidget(label, row, 0)
             layout.addWidget(minus, row, 1)
             layout.addWidget(spin, row, 2)
             layout.addWidget(plus, row, 3)
             self._field_spins[field_key] = spin
 
-        self._send_if_changed = QCheckBox("Send if changed only")
+        self._send_if_changed = self._register_text(QCheckBox(), "send_if_changed")
         self._send_if_changed.setChecked(True)
         self._j5_target_spin = QDoubleSpinBox()
         self._j5_target_spin.setDecimals(4)
         self._j5_target_spin.setRange(-10.0, 10.0)
         self._j5_target_spin.setSingleStep(0.001)
         self._j5_target_spin.setSuffix(" m")
-        send_btn = QPushButton("Send")
+        send_btn = self._register_text(QPushButton(), "send")
         set_button_role(send_btn, "primary")
         send_btn.clicked.connect(self._send_target)
-        reset_btn = QPushButton("Reset XYZ to current")
+        reset_btn = self._register_text(QPushButton(), "reset_xyz")
         reset_btn.clicked.connect(self._reset_xyz_to_current)
-        send_j5_btn = QPushButton("Send J5")
+        send_j5_btn = self._register_text(QPushButton(), "send_j5")
         set_button_role(send_j5_btn, "magenta")
         send_j5_btn.clicked.connect(self._send_j5)
-        use_j5_btn = QPushButton("Use actual")
+        use_j5_btn = self._register_text(QPushButton(), "use_actual")
         use_j5_btn.clicked.connect(self._use_actual_j5)
 
-        layout.addWidget(QLabel("xyz step"), 4, 0)
+        layout.addWidget(self._register_text(QLabel(), "xyz_step"), 4, 0)
         layout.addWidget(self._xyz_step_spin, 4, 2)
-        layout.addWidget(QLabel("j4 step"), 5, 0)
+        layout.addWidget(self._register_text(QLabel(), "j4_step"), 5, 0)
         layout.addWidget(self._j4_step_spin, 5, 2)
-        layout.addWidget(QLabel("J5 target (m)"), 6, 0)
+        layout.addWidget(self._register_text(QLabel(), "j5_target"), 6, 0)
         layout.addWidget(self._j5_target_spin, 6, 2)
         layout.addWidget(send_j5_btn, 6, 3)
         layout.addWidget(use_j5_btn, 7, 2, 1, 2)
@@ -698,23 +800,23 @@ class RemoteControlWindow(QMainWindow):
         return box
 
     def _build_system_panel(self) -> QWidget:
-        box = QGroupBox("System Control")
+        box = self._register_text(QGroupBox(), "system_control")
         layout = QVBoxLayout(box)
-        for text, action, role in [
-            ("Request Start MuJoCo", "start_mujoco", "safe"),
-            ("Request Stop MuJoCo", "stop_mujoco", "danger"),
-            ("Request Start Real", "start_real", "safe"),
-            ("Request Stop Real", "stop_real", "danger"),
+        for key, action, role in [
+            ("request_start_mujoco", "start_mujoco", "safe"),
+            ("request_stop_mujoco", "stop_mujoco", "danger"),
+            ("request_start_real", "start_real", "safe"),
+            ("request_stop_real", "stop_real", "danger"),
         ]:
-            button = QPushButton(text)
+            button = self._register_text(QPushButton(), key)
             set_button_role(button, role)
             button.clicked.connect(lambda _=False, a=action: self._backend.queue_service_action(a))
             layout.addWidget(button)
 
-        vacuum_on = QPushButton("Vacuum ON")
-        vacuum_off = QPushButton("Vacuum OFF")
-        payload_on = QPushButton("Payload ON")
-        payload_off = QPushButton("Payload OFF")
+        vacuum_on = self._register_text(QPushButton(), "vacuum_on")
+        vacuum_off = self._register_text(QPushButton(), "vacuum_off")
+        payload_on = self._register_text(QPushButton(), "payload_on")
+        payload_off = self._register_text(QPushButton(), "payload_off")
         set_button_role(vacuum_on, "warn")
         set_button_role(payload_on, "warn")
         vacuum_on.clicked.connect(lambda: self._backend.queue_vacuum(True))
@@ -727,11 +829,11 @@ class RemoteControlWindow(QMainWindow):
         self._action_set_spin = QSpinBox()
         self._action_set_spin.setRange(1, 999)
         self._action_set_spin.setValue(1)
-        run_action = QPushButton("Run Action Set")
+        run_action = self._register_text(QPushButton(), "run_action_set")
         set_button_role(run_action, "primary")
         run_action.clicked.connect(lambda: self._backend.queue_action_set(self._action_set_spin.value()))
         action_row = QHBoxLayout()
-        action_row.addWidget(QLabel("Action set id"))
+        action_row.addWidget(self._register_text(QLabel(), "action_set_id"))
         action_row.addWidget(self._action_set_spin)
         layout.addLayout(action_row)
         layout.addWidget(run_action)
@@ -739,7 +841,7 @@ class RemoteControlWindow(QMainWindow):
         return box
 
     def _build_status_panel(self) -> QWidget:
-        box = QGroupBox("Status")
+        box = self._register_text(QGroupBox(), "status")
         layout = QFormLayout(box)
         self._actual_label = QLabel("waiting for actual pose")
         self._editing_label = QLabel("NA")
@@ -749,18 +851,18 @@ class RemoteControlWindow(QMainWindow):
         self._process_status_label = QLabel("waiting for host")
         self._payload_status_label = QLabel("false")
         self._j5_actual_label = QLabel("waiting")
-        layout.addRow("Actual current pose", self._actual_label)
-        layout.addRow("Editing target", self._editing_label)
-        layout.addRow("Last sent target", self._last_sent_label)
-        layout.addRow("Last send result", self._send_status_label)
-        layout.addRow("Reachability", self._reachability_label)
-        layout.addRow("Process status", self._process_status_label)
-        layout.addRow("Payload active", self._payload_status_label)
-        layout.addRow("J5 actual (m)", self._j5_actual_label)
+        layout.addRow(self._register_text(QLabel(), "actual_pose"), self._actual_label)
+        layout.addRow(self._register_text(QLabel(), "editing_target"), self._editing_label)
+        layout.addRow(self._register_text(QLabel(), "last_sent"), self._last_sent_label)
+        layout.addRow(self._register_text(QLabel(), "last_send_result"), self._send_status_label)
+        layout.addRow(self._register_text(QLabel(), "reachability"), self._reachability_label)
+        layout.addRow(self._register_text(QLabel(), "process_status"), self._process_status_label)
+        layout.addRow(self._register_text(QLabel(), "payload_active"), self._payload_status_label)
+        layout.addRow(self._register_text(QLabel(), "j5_actual"), self._j5_actual_label)
         return box
 
     def _build_log_panel(self) -> QWidget:
-        box = QGroupBox("Log")
+        box = self._register_text(QGroupBox(), "log")
         layout = QVBoxLayout(box)
         self._log_view = QPlainTextEdit()
         self._log_view.setObjectName("logView")
