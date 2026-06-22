@@ -56,6 +56,8 @@ REMOTE_LOG_TOPIC = "/rc_arm_2/remote/log"
 REMOTE_PROCESS_STATUS_TOPIC = "/rc_arm_2/remote/process_status"
 REMOTE_REACHABILITY_REQUEST_TOPIC = "/rc_arm_2/remote/reachability_request"
 REMOTE_REACHABILITY_RESULT_TOPIC = "/rc_arm_2/remote/reachability_result"
+REMOTE_CLIENT_HEARTBEAT_TOPIC = "/rc_arm_2/remote/client_heartbeat"
+HOST_STATUS_TIMEOUT_SEC = 3.0
 NEON_CONSOLE_STYLESHEET = """
 QMainWindow {
     background: #030712;
@@ -88,6 +90,11 @@ QGroupBox::title {
 QLabel {
     color: #eafcff;
     font-size: 15px;
+}
+QLabel#connectionIndicator {
+    color: #ff2f5f;
+    font: 800 13px "Cascadia Code", "Liberation Mono", monospace;
+    padding: 2px 8px;
 }
 QFormLayout QLabel {
     color: #9ab8c6;
@@ -339,9 +346,10 @@ class RemoteRosBackend(QObject):
     log_line = Signal(str)
     backend_error = Signal(str)
 
-    def __init__(self, args) -> None:
+    def __init__(self, args, client_id: str) -> None:
         super().__init__()
         self._args = args
+        self._client_id = client_id
         self._node: Optional[Node] = None
         self._tf_pub = None
         self._vacuum_pub = None
@@ -349,6 +357,7 @@ class RemoteRosBackend(QObject):
         self._j5_command_pub = None
         self._middleware_run_pub = None
         self._reachability_request_pub = None
+        self._heartbeat_pub = None
         self._tf_buffer = None
         self._tf_listener = None
         self._service_clients: Dict[str, object] = {}
@@ -364,6 +373,7 @@ class RemoteRosBackend(QObject):
         self._pending_reachability: Optional[TargetState] = None
         self._last_sent: Optional[TargetState] = None
         self._last_actual_emit = 0.0
+        self._last_heartbeat_publish = 0.0
 
     def start(self) -> None:
         if not rclpy.ok():
@@ -376,6 +386,9 @@ class RemoteRosBackend(QObject):
         self._middleware_run_pub = self._node.create_publisher(Int32, self._args.middleware_run_action_set_topic, 10)
         self._reachability_request_pub = self._node.create_publisher(
             String, REMOTE_REACHABILITY_REQUEST_TOPIC, 10
+        )
+        self._heartbeat_pub = self._node.create_publisher(
+            String, REMOTE_CLIENT_HEARTBEAT_TOPIC, 10
         )
         self._node.create_subscription(Bool, self._args.payload_active_topic, self._on_payload, 10)
         self._node.create_subscription(Float64, self._args.j5_position_topic, self._on_j5, 20)
@@ -457,9 +470,28 @@ class RemoteRosBackend(QObject):
                 self._flush_action_set()
                 self._flush_service_action()
                 self._flush_reachability_request()
+                self._publish_heartbeat()
             except Exception as exc:  # pragma: no cover
                 self.backend_error.emit(str(exc))
                 time.sleep(0.1)
+
+    def _publish_heartbeat(self) -> None:
+        if self._heartbeat_pub is None:
+            return
+        now = time.time()
+        if now - self._last_heartbeat_publish < 1.0:
+            return
+        self._last_heartbeat_publish = now
+        msg = String()
+        msg.data = json.dumps(
+            {
+                "stamp": now,
+                "client_id": self._client_id,
+                "app": "rc_arm_remote_client",
+            },
+            sort_keys=True,
+        )
+        self._heartbeat_pub.publish(msg)
 
     def _refresh_actual_pose(self) -> None:
         if self._tf_buffer is None:
@@ -638,15 +670,21 @@ class RemoteControlWindow(QMainWindow):
         self._language = str(self._settings.value("language", "en"))
         if self._language not in ("en", "zh"):
             self._language = "en"
+        self._client_id = str(self._settings.value("client_id", ""))
+        if not self._client_id:
+            self._client_id = uuid.uuid4().hex
+            self._settings.setValue("client_id", self._client_id)
         self._translatable_widgets = []
         self._language_toggle: Optional[QCheckBox] = None
+        self._last_host_status_time = 0.0
+        self._remote_client_count = 0
 
         self.setWindowTitle("RC Arm Remote Control")
         self.setMinimumSize(1280, 760)
         self.resize(1500, 900)
         self.setStyleSheet(NEON_CONSOLE_STYLESHEET)
 
-        self._backend = RemoteRosBackend(args)
+        self._backend = RemoteRosBackend(args, self._client_id)
         self._backend.actual_pose_updated.connect(self._on_actual_pose)
         self._backend.payload_state_updated.connect(self._on_payload_state)
         self._backend.j5_position_updated.connect(self._on_j5_position)
@@ -662,12 +700,17 @@ class RemoteControlWindow(QMainWindow):
         self._reachability_timer.setInterval(300)
         self._reachability_timer.setSingleShot(True)
         self._reachability_timer.timeout.connect(self._request_reachability)
+        self._host_status_timer = QTimer(self)
+        self._host_status_timer.setInterval(1000)
+        self._host_status_timer.timeout.connect(self._update_connection_indicator)
 
         self._build_ui()
         self._apply_language()
+        self._update_connection_indicator()
         self._install_shortcuts()
         self._sync_editing_widgets()
         self._backend.start()
+        self._host_status_timer.start()
         self._request_reachability()
 
     def _text(self, key: str) -> str:
@@ -708,6 +751,20 @@ class RemoteControlWindow(QMainWindow):
         self._language = "zh" if checked else "en"
         self._apply_language()
 
+    def _update_connection_indicator(self) -> None:
+        online = (
+            self._last_host_status_time > 0.0
+            and time.monotonic() - self._last_host_status_time <= HOST_STATUS_TIMEOUT_SEC
+        )
+        if online:
+            text = "● Host online · Remote clients: {}".format(self._remote_client_count)
+            color = "#39ff88"
+        else:
+            text = "● Host offline · Remote clients: ?"
+            color = "#ff2f5f"
+        self._connection_indicator.setText(text)
+        self._connection_indicator.setStyleSheet("color: {};".format(color))
+
     def _build_ui(self) -> None:
         central = QWidget()
         central.setObjectName("contentRoot")
@@ -722,6 +779,9 @@ class RemoteControlWindow(QMainWindow):
         root.addLayout(bottom, stretch=2)
         footer = QHBoxLayout()
         footer.addWidget(self._build_language_toggle(), stretch=0)
+        self._connection_indicator = QLabel()
+        self._connection_indicator.setObjectName("connectionIndicator")
+        footer.addWidget(self._connection_indicator, stretch=0)
         footer.addStretch(1)
         root.addLayout(footer, stretch=0)
 
@@ -978,6 +1038,14 @@ class RemoteControlWindow(QMainWindow):
     def _on_process_status(self, payload: object) -> None:
         summary = str(payload.get("summary", "unknown")) if isinstance(payload, dict) else str(payload)
         self._process_status_label.setText(summary)
+        if isinstance(payload, dict):
+            self._last_host_status_time = time.monotonic()
+            try:
+                remote_clients = int(payload.get("remote_clients", 0))
+            except Exception:
+                remote_clients = 0
+            self._remote_client_count = max(0, remote_clients)
+            self._update_connection_indicator()
 
     @Slot(object)
     def _on_reachability(self, payload: object) -> None:
